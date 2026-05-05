@@ -1,0 +1,224 @@
+-- ============================================================
+-- PROJET : Audit de Performance d'une Clinique Médicale
+-- Auteur  : Wael Belfaleh | Data Analyst Freelance
+-- Date    : 2025
+-- Base    : SQLite
+-- ============================================================
+-- CONTEXTE MÉTIER :
+--   Une clinique privée perdait 3h par semaine à faire ses
+--   rapports financiers manuellement sur Excel. Les médecins
+--   n'avaient aucune visibilité sur leurs impayés ni sur leur
+--   propre rentabilité. Ce projet automatise l'audit complet.
+-- ============================================================
+
+
+-- ============================================================
+-- PARTIE 1 : CRÉATION DES TABLES
+-- ============================================================
+
+-- Table des patients
+CREATE TABLE patients (
+    patient_id   INTEGER PRIMARY KEY,
+    nom          TEXT    NOT NULL,
+    prenom       TEXT    NOT NULL,
+    date_naissance DATE,
+    ville        TEXT
+);
+
+-- Table des médecins
+CREATE TABLE medecins (
+    medecin_id   INTEGER PRIMARY KEY,
+    nom          TEXT    NOT NULL,
+    specialite   TEXT    NOT NULL
+);
+
+-- Table des consultations (chaque visite = une ligne)
+CREATE TABLE consultations (
+    consultation_id  INTEGER PRIMARY KEY,
+    patient_id       INTEGER NOT NULL,
+    medecin_id       INTEGER NOT NULL,
+    date_consultation DATE   NOT NULL,
+    montant_du       REAL    NOT NULL,   -- Ce que le patient doit payer
+    montant_paye     REAL    DEFAULT 0,  -- Ce qu'il a réellement payé
+    FOREIGN KEY (patient_id)  REFERENCES patients(patient_id),
+    FOREIGN KEY (medecin_id)  REFERENCES medecins(medecin_id)
+);
+
+
+-- ============================================================
+-- PARTIE 2 : DONNÉES DE TEST 
+-- ============================================================
+
+INSERT INTO patients VALUES
+(1,  'Dupont',   'Marie',    '1985-03-12', 'Paris'),
+(2,  'Martin',   'Jean',     '1972-07-04', 'Lyon'),
+(3,  'Bernard',  'Sophie',   '1990-11-22', 'Paris'),
+(4,  'Leroy',    'Pierre',   '2001-01-30', 'Marseille'),
+(5,  'Moreau',   'Claire',   '1968-05-18', 'Paris'),
+(6,  'Simon',    'Lucas',    '1995-09-09', 'Bordeaux'),
+(7,  'Laurent',  'Emma',     '1983-02-14', 'Paris');
+
+INSERT INTO medecins VALUES
+(1, 'Dr. Kamara',   'Généraliste'),
+(2, 'Dr. Fontaine', 'Cardiologue'),
+(3, 'Dr. Nguyen',   'Dermatologue');
+
+INSERT INTO consultations VALUES
+-- Consultations payées en totalité
+(1,  1, 1, '2024-01-10', 50.00,  50.00),
+(2,  2, 2, '2024-01-15', 120.00, 120.00),
+(3,  3, 1, '2024-02-03', 50.00,  50.00),
+(4,  4, 3, '2024-02-20', 90.00,  90.00),
+(5,  5, 2, '2024-03-05', 120.00, 120.00),
+-- Consultations partiellement payées (impayés partiels)
+(6,  6, 1, '2024-03-12', 50.00,  20.00),
+(7,  7, 3, '2024-04-01', 90.00,  45.00),
+(8,  1, 2, '2024-04-18', 120.00, 60.00),
+-- Consultations totalement impayées
+(9,  2, 1, '2024-05-02', 50.00,  0.00),
+(10, 3, 3, '2024-05-14', 90.00,  0.00),
+(11, 5, 2, '2024-06-01', 120.00, 0.00),
+(12, 6, 1, '2024-06-22', 50.00,  0.00),
+-- Consultations récentes
+(13, 7, 3, '2024-07-10', 90.00,  90.00),
+(14, 4, 2, '2024-07-25', 120.00, 120.00),
+(15, 1, 1, '2024-08-05', 50.00,  50.00);
+
+
+-- ============================================================
+-- PARTIE 3 : ANALYSES SQL 
+-- ============================================================
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 1 : Liste complète des impayés avec détail patient
+-- ------------------------------------------------------------
+-- PROBLÈME : La clinique ne sait pas qui doit de l'argent.
+-- SOLUTION  : LEFT JOIN entre consultations et patients pour
+--             récupérer toutes les consultations, même si le
+--             patient a un solde à zéro (impayé total).
+-- ------------------------------------------------------------
+
+SELECT
+    p.nom                                          AS patient_nom,
+    p.prenom                                       AS patient_prenom,
+    p.ville,
+    c.date_consultation,
+    c.montant_du                                   AS montant_facturé,
+    c.montant_paye                                 AS montant_payé,
+    -- Calcul du reste à payer pour chaque ligne
+    (c.montant_du - c.montant_paye)                AS reste_a_payer,
+    -- Statut lisible pour filtrage facile
+    CASE
+        WHEN c.montant_paye = 0               THEN 'IMPAYÉ TOTAL'
+        WHEN c.montant_paye < c.montant_du    THEN 'IMPAYÉ PARTIEL'
+        ELSE                                       'SOLDÉ'
+    END                                            AS statut_paiement
+FROM consultations c
+-- LEFT JOIN : on garde TOUTES les consultations,
+-- même si le patient n'apparaît pas dans une autre table
+LEFT JOIN patients p ON c.patient_id = p.patient_id
+WHERE c.montant_paye < c.montant_du   -- On ne garde que les impayés
+ORDER BY reste_a_payer DESC;          -- Les plus grosses dettes en premier
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 2 : Tableau de bord des impayés par patient
+-- ------------------------------------------------------------
+-- PROBLÈME : Certains patients ont PLUSIEURS impayés.
+--            La clinique veut une vue consolidée par personne.
+-- SOLUTION  : GROUP BY + SUM pour agréger par patient.
+-- ------------------------------------------------------------
+
+SELECT
+    p.nom                                          AS patient_nom,
+    p.prenom                                       AS patient_prenom,
+    -- Nombre total de consultations du patient
+    COUNT(c.consultation_id)                       AS nb_consultations,
+    -- Total de ce qu'il a dû payer sur toute la période
+    SUM(c.montant_du)                              AS total_facturé,
+    -- Total de ce qu'il a réellement payé
+    SUM(c.montant_paye)                            AS total_payé,
+    -- Solde restant (la vraie dette)
+    SUM(c.montant_du - c.montant_paye)             AS solde_impayé
+FROM consultations c
+LEFT JOIN patients p ON c.patient_id = p.patient_id
+GROUP BY p.patient_id, p.nom, p.prenom
+-- HAVING filtre sur le résultat du GROUP BY (≠ WHERE qui filtre avant)
+HAVING solde_impayé > 0
+ORDER BY solde_impayé DESC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 3 : Classement des médecins par chiffre d'affaires
+-- ------------------------------------------------------------
+-- PROBLÈME : La direction veut savoir quels médecins génèrent
+--            le plus de revenus ET lesquels ont le plus d'impayés.
+-- SOLUTION  : GROUP BY sur medecin_id avec plusieurs métriques.
+-- ------------------------------------------------------------
+
+SELECT
+    m.nom                                          AS medecin,
+    m.specialite,
+    COUNT(c.consultation_id)                       AS nb_consultations,
+    SUM(c.montant_du)                              AS ca_theorique,
+    SUM(c.montant_paye)                            AS ca_reel,
+    SUM(c.montant_du - c.montant_paye)             AS montant_impayé,
+    -- Taux de recouvrement en % (combien de l'argent dû est réellement encaissé)
+    ROUND(
+        SUM(c.montant_paye) * 100.0 / SUM(c.montant_du),
+        1
+    )                                              AS taux_recouvrement_pct
+FROM consultations c
+LEFT JOIN medecins m ON c.medecin_id = m.medecin_id
+GROUP BY m.medecin_id, m.nom, m.specialite
+ORDER BY ca_reel DESC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 4 : Évolution mensuelle du chiffre d'affaires
+-- ------------------------------------------------------------
+-- PROBLÈME : Y a-t-il des mois creux ? La clinique croît-elle ?
+-- SOLUTION  : GROUP BY sur le mois extrait de la date.
+-- ------------------------------------------------------------
+
+SELECT
+    -- Extraction du mois depuis la date (format YYYY-MM pour le tri)
+    strftime('%Y-%m', c.date_consultation)         AS mois,
+    COUNT(c.consultation_id)                       AS nb_consultations,
+    SUM(c.montant_du)                              AS ca_facturé,
+    SUM(c.montant_paye)                            AS ca_encaissé,
+    -- Taux de remplissage mensuel
+    ROUND(
+        SUM(c.montant_paye) * 100.0 / SUM(c.montant_du),
+        1
+    )                                              AS taux_encaissement_pct
+FROM consultations c
+GROUP BY mois
+ORDER BY mois ASC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 5 
+-- ------------------------------------------------------------
+-- Une VIEW permet de sauvegarder une requête complexe comme
+-- si c'était une table. La direction peut l'appeler à tout moment
+-- sans avoir à réécrire le SQL.
+-- ------------------------------------------------------------
+
+CREATE VIEW IF NOT EXISTS vue_dashboard_clinique AS
+SELECT
+    m.nom                                          AS medecin,
+    m.specialite,
+    strftime('%Y-%m', c.date_consultation)         AS mois,
+    COUNT(c.consultation_id)                       AS nb_actes,
+    SUM(c.montant_du)                              AS ca_facturé,
+    SUM(c.montant_paye)                            AS ca_encaissé,
+    SUM(c.montant_du - c.montant_paye)             AS impayés
+FROM consultations c
+LEFT JOIN medecins m ON c.medecin_id = m.medecin_id
+GROUP BY m.medecin_id, mois;
+
+-- Utilisation de la vue 
+SELECT * FROM vue_dashboard_clinique
+ORDER BY mois DESC, ca_encaissé DESC;
