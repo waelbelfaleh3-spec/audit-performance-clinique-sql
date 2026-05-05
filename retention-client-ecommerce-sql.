@@ -1,0 +1,308 @@
+-- ============================================================
+-- PROJET : Analyse de la Rétention Client — E-commerce
+-- Auteur  : Wael Belfaleh | Data Analyst Freelance
+-- Date    : 2025
+-- Base    : SQLite
+-- ============================================================
+-- CONTEXTE MÉTIER :
+--   Une boutique e-commerce constatait une baisse de son CA
+--   sans en comprendre la cause. En creusant, on découvre que
+--   60% de leurs clients n'ont passé qu'UNE seule commande et
+--   ne sont jamais revenus. Ce projet identifie ces clients
+--   "endormis" pour les relancer via email marketing ciblé.
+--
+-- IMPACT ATTENDU :
+--   Réactiver 10% des clients endormis = +15% de CA
+--   sans dépenser 1€ en acquisition de nouveaux clients.
+-- ============================================================
+
+
+-- ============================================================
+-- PARTIE 1 : CRÉATION DES TABLES
+-- ============================================================
+
+-- Table des clients
+CREATE TABLE clients (
+    client_id       INTEGER PRIMARY KEY,
+    nom             TEXT    NOT NULL,
+    prenom          TEXT    NOT NULL,
+    email           TEXT    NOT NULL UNIQUE,
+    ville           TEXT,
+    date_inscription DATE   NOT NULL
+);
+
+-- Table des produits
+CREATE TABLE produits (
+    produit_id      INTEGER PRIMARY KEY,
+    nom_produit     TEXT    NOT NULL,
+    categorie       TEXT    NOT NULL,
+    prix_unitaire   REAL    NOT NULL
+);
+
+-- Table des commandes (une commande = un panier validé)
+CREATE TABLE commandes (
+    commande_id     INTEGER PRIMARY KEY,
+    client_id       INTEGER NOT NULL,
+    date_commande   DATE    NOT NULL,
+    montant_total   REAL    NOT NULL,
+    statut          TEXT    DEFAULT 'livrée',
+    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+);
+
+-- Table des lignes de commande (le détail de chaque panier)
+-- C'est ici qu'on relie commandes et produits (relation N:N)
+CREATE TABLE lignes_commande (
+    ligne_id        INTEGER PRIMARY KEY,
+    commande_id     INTEGER NOT NULL,
+    produit_id      INTEGER NOT NULL,
+    quantite        INTEGER NOT NULL DEFAULT 1,
+    prix_vente      REAL    NOT NULL,
+    FOREIGN KEY (commande_id) REFERENCES commandes(commande_id),
+    FOREIGN KEY (produit_id)  REFERENCES produits(produit_id)
+);
+
+
+-- ============================================================
+-- PARTIE 2 : DONNÉES DE TEST (réalistes, avec cas limites)
+-- ============================================================
+
+INSERT INTO clients VALUES
+(1,  'Dupont',    'Marie',    'marie.dupont@gmail.com',    'Paris',     '2023-01-15'),
+(2,  'Martin',    'Jean',     'jean.martin@gmail.com',     'Lyon',      '2023-02-20'),
+(3,  'Bernard',   'Sophie',   'sophie.bernard@gmail.com',  'Bordeaux',  '2023-03-10'),
+(4,  'Leroy',     'Pierre',   'pierre.leroy@gmail.com',    'Paris',     '2023-04-05'),
+(5,  'Moreau',    'Claire',   'claire.moreau@gmail.com',   'Nantes',    '2023-05-18'),
+(6,  'Simon',     'Lucas',    'lucas.simon@gmail.com',     'Paris',     '2023-06-22'),
+(7,  'Laurent',   'Emma',     'emma.laurent@gmail.com',    'Marseille', '2023-07-14'),
+(8,  'Michel',    'Thomas',   'thomas.michel@gmail.com',   'Lyon',      '2023-08-30'),
+(9,  'Garcia',    'Lucie',    'lucie.garcia@gmail.com',    'Paris',     '2023-09-12'),
+(10, 'David',     'Antoine',  'antoine.david@gmail.com',   'Toulouse',  '2023-10-01');
+
+INSERT INTO produits VALUES
+(1, 'Chaussures Running',   'Sport',        89.99),
+(2, 'T-shirt Premium',      'Vetements',    34.99),
+(3, 'Montre Connectee',     'High-Tech',   199.99),
+(4, 'Sac a Dos',            'Accessoires',  59.99),
+(5, 'Casque Audio',         'High-Tech',   149.99),
+(6, 'Livre SQL Avance',     'Livres',       29.99),
+(7, 'Tapis de Yoga',        'Sport',        45.99);
+
+INSERT INTO commandes VALUES
+-- Clients actifs (commandes récentes < 6 mois)
+(1,  1,  '2024-09-10', 89.99,  'livree'),
+(2,  1,  '2024-11-22', 34.99,  'livree'),
+(3,  2,  '2024-10-05', 199.99, 'livree'),
+(4,  6,  '2024-12-01', 59.99,  'livree'),
+(5,  9,  '2024-11-15', 149.99, 'livree'),
+-- Clients endormis (dernière commande > 6 mois)
+(6,  3,  '2023-12-20', 89.99,  'livree'),
+(7,  4,  '2024-01-08', 34.99,  'livree'),
+(8,  5,  '2024-02-14', 199.99, 'livree'),
+(9,  7,  '2024-03-30', 45.99,  'livree'),
+(10, 8,  '2024-04-12', 29.99,  'livree'),
+-- Client avec commande annulée
+(11, 10, '2024-05-20', 149.99, 'annulee'),
+(12, 10, '2024-02-10', 89.99,  'livree'),
+-- Commandes supplémentaires
+(13, 1,  '2024-07-15', 149.99, 'livree'),
+(14, 2,  '2024-08-20', 45.99,  'livree'),
+(15, 6,  '2024-09-05', 29.99,  'livree');
+
+INSERT INTO lignes_commande VALUES
+(1,  1,  1, 1, 89.99),
+(2,  2,  2, 1, 34.99),
+(3,  3,  3, 1, 199.99),
+(4,  4,  4, 1, 59.99),
+(5,  5,  5, 1, 149.99),
+(6,  6,  1, 1, 89.99),
+(7,  7,  2, 1, 34.99),
+(8,  8,  3, 1, 199.99),
+(9,  9,  7, 1, 45.99),
+(10, 10, 6, 1, 29.99),
+(11, 11, 5, 1, 149.99),
+(12, 12, 1, 1, 89.99),
+(13, 13, 5, 1, 149.99),
+(14, 14, 7, 1, 45.99),
+(15, 15, 6, 1, 29.99);
+
+
+-- ============================================================
+-- PARTIE 3 : ANALYSES SQL
+-- ============================================================
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 1 : Identifier les clients endormis
+-- ------------------------------------------------------------
+-- PROBLÈME : Qui n'a pas commandé depuis plus de 6 mois ?
+-- SOLUTION  : Calculer la date de dernière commande par client
+--             et comparer à aujourd'hui avec julianday().
+-- ------------------------------------------------------------
+
+SELECT
+    c.client_id,
+    c.nom,
+    c.prenom,
+    c.email,
+    c.ville,
+    MAX(cmd.date_commande)                          AS derniere_commande,
+    CAST(julianday('now') - julianday(MAX(cmd.date_commande)) AS INTEGER)
+                                                    AS jours_depuis_achat,
+    COUNT(DISTINCT cmd.commande_id)                 AS nb_commandes_total,
+    ROUND(SUM(cmd.montant_total), 2)                AS ca_total_client
+FROM clients c
+INNER JOIN commandes cmd ON c.client_id = cmd.client_id
+WHERE cmd.statut = 'livree'
+GROUP BY c.client_id, c.nom, c.prenom, c.email, c.ville
+HAVING jours_depuis_achat > 180
+ORDER BY jours_depuis_achat DESC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 2 : Segmentation des clients endormis par valeur
+-- ------------------------------------------------------------
+-- PROBLÈME : On ne relance pas de la même façon un client
+--            à 500€ et un client à 30€.
+-- SOLUTION  : CASE WHEN pour créer 3 segments de priorité.
+-- ------------------------------------------------------------
+
+SELECT
+    c.nom,
+    c.prenom,
+    c.email,
+    MAX(cmd.date_commande)                          AS derniere_commande,
+    CAST(julianday('now') - julianday(MAX(cmd.date_commande)) AS INTEGER)
+                                                    AS jours_inactif,
+    ROUND(SUM(cmd.montant_total), 2)                AS ca_total,
+    COUNT(DISTINCT cmd.commande_id)                 AS nb_commandes,
+    CASE
+        WHEN SUM(cmd.montant_total) >= 200          THEN 'PRIORITE HAUTE (VIP)'
+        WHEN SUM(cmd.montant_total) >= 80           THEN 'PRIORITE MOYENNE'
+        ELSE                                             'PRIORITE BASSE'
+    END                                             AS segment_relance
+FROM clients c
+INNER JOIN commandes cmd ON c.client_id = cmd.client_id
+WHERE cmd.statut = 'livree'
+GROUP BY c.client_id, c.nom, c.prenom, c.email
+HAVING jours_inactif > 180
+ORDER BY ca_total DESC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 3 : Taux de rétention global de la boutique
+-- ------------------------------------------------------------
+-- PROBLÈME : Quelle proportion de clients revient acheter ?
+-- SOLUTION  : Comparer clients "one-shot" vs clients fidèles.
+-- ------------------------------------------------------------
+
+SELECT
+    COUNT(DISTINCT CASE WHEN cmd.statut = 'livree' THEN c.client_id END)
+                                                    AS clients_total,
+    COUNT(DISTINCT CASE
+        WHEN cmd.statut = 'livree'
+        AND (
+            SELECT COUNT(*) FROM commandes c2
+            WHERE c2.client_id = c.client_id AND c2.statut = 'livree'
+        ) = 1
+        THEN c.client_id
+    END)                                            AS clients_one_shot,
+    COUNT(DISTINCT CASE
+        WHEN cmd.statut = 'livree'
+        AND (
+            SELECT COUNT(*) FROM commandes c2
+            WHERE c2.client_id = c.client_id AND c2.statut = 'livree'
+        ) >= 2
+        THEN c.client_id
+    END)                                            AS clients_fideles,
+    ROUND(
+        COUNT(DISTINCT CASE
+            WHEN (SELECT COUNT(*) FROM commandes c2
+                  WHERE c2.client_id = c.client_id AND c2.statut = 'livree') >= 2
+            THEN c.client_id END) * 100.0 /
+        COUNT(DISTINCT CASE WHEN cmd.statut = 'livree' THEN c.client_id END),
+        1
+    )                                               AS taux_retention_pct
+FROM clients c
+INNER JOIN commandes cmd ON c.client_id = cmd.client_id;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 4 : Top produits achetés par les clients endormis
+-- ------------------------------------------------------------
+-- PROBLÈME : Quels produits cibler dans l'email de relance ?
+-- SOLUTION  : Sous-requête dans le FROM pour filtrer
+--             uniquement sur les clients endormis.
+-- ------------------------------------------------------------
+
+SELECT
+    p.nom_produit,
+    p.categorie,
+    p.prix_unitaire,
+    COUNT(DISTINCT lc.commande_id)                  AS nb_fois_achete,
+    SUM(lc.quantite)                                AS quantite_totale_vendue
+FROM lignes_commande lc
+INNER JOIN produits p       ON lc.produit_id  = p.produit_id
+INNER JOIN commandes cmd    ON lc.commande_id = cmd.commande_id
+INNER JOIN (
+    SELECT client_id
+    FROM commandes
+    WHERE statut = 'livree'
+    GROUP BY client_id
+    HAVING CAST(julianday('now') - julianday(MAX(date_commande)) AS INTEGER) > 180
+) clients_endormis ON cmd.client_id = clients_endormis.client_id
+WHERE cmd.statut = 'livree'
+GROUP BY p.produit_id, p.nom_produit, p.categorie, p.prix_unitaire
+ORDER BY nb_fois_achete DESC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 5 : Évolution mensuelle CA + panier moyen
+-- ------------------------------------------------------------
+-- PROBLÈME : Est-ce qu'on acquiert des clients régulièrement ?
+-- SOLUTION  : GROUP BY mois avec COUNT DISTINCT pour éviter
+--             de compter plusieurs fois le même client.
+-- ------------------------------------------------------------
+
+SELECT
+    strftime('%Y-%m', cmd.date_commande)            AS mois,
+    COUNT(DISTINCT cmd.client_id)                   AS clients_actifs,
+    COUNT(cmd.commande_id)                          AS nb_commandes,
+    ROUND(SUM(cmd.montant_total), 2)                AS ca_mensuel,
+    ROUND(AVG(cmd.montant_total), 2)                AS panier_moyen
+FROM commandes cmd
+WHERE cmd.statut = 'livree'
+GROUP BY mois
+ORDER BY mois ASC;
+
+
+-- ------------------------------------------------------------
+-- ANALYSE 6 : Vue liste de relance exportable CSV
+-- ------------------------------------------------------------
+-- Cette vue génère directement la liste à exporter pour
+-- l'intégrer dans Mailchimp, Brevo ou tout outil d'emailing.
+-- ------------------------------------------------------------
+
+CREATE VIEW IF NOT EXISTS vue_liste_relance AS
+SELECT
+    c.email,
+    c.prenom,
+    c.nom,
+    c.ville,
+    MAX(cmd.date_commande)                          AS derniere_commande,
+    CAST(julianday('now') - julianday(MAX(cmd.date_commande)) AS INTEGER)
+                                                    AS jours_inactif,
+    ROUND(SUM(cmd.montant_total), 2)                AS valeur_client,
+    CASE
+        WHEN SUM(cmd.montant_total) >= 200          THEN 'VIP'
+        WHEN SUM(cmd.montant_total) >= 80           THEN 'STANDARD'
+        ELSE                                             'FAIBLE'
+    END                                             AS segment
+FROM clients c
+INNER JOIN commandes cmd ON c.client_id = cmd.client_id
+WHERE cmd.statut = 'livree'
+GROUP BY c.client_id, c.email, c.prenom, c.nom, c.ville
+HAVING jours_inactif > 180;
+
+-- Export de la liste
+SELECT * FROM vue_liste_relance
+ORDER BY valeur_client DESC;
